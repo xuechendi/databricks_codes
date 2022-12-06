@@ -1,0 +1,11 @@
+{# sklearn_decision_tree.jinja prepares the cell for training model using decision trees #}
+{% extends 'classification/sklearn_base.jinja' %}
+{% set model_name = 'Decision Tree' %}
+
+{% block model_definition %}
+DecisionTreeClassifier(
+{% for key in parameter_dict %}
+  {{key}}={{parameter_dict[key]}},
+{% endfor %}
+)
+{% endblock %}

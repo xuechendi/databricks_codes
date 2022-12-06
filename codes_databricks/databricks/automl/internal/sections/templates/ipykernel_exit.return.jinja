@@ -1,0 +1,10 @@
+{% import 'macros.jinja' as m with context %}
+{% set var_data = m.with_prefix('data') %}
+
+import json
+
+{{var_data}} = {
+    "mlflow_run_id": {{var_run}}.info.run_id
+}
+
+print(json.dumps({{var_data}}))

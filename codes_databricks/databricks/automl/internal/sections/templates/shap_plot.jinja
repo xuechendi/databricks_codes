@@ -1,0 +1,58 @@
+{# shap_plot.jinja generates a feature importance plot for the trained model using SHAP. #}
+%md ## Feature importance
+
+SHAP is a game-theoretic approach to explain machine learning models, providing a summary plot
+of the relationship between features and model output. Features are ranked in descending order of
+importance, and impact/color describe the correlation between the feature and the target variable.
+- Generating SHAP feature importance is a very memory intensive operation, so to ensure that AutoML can run trials without
+  running out of memory, we disable SHAP by default.<br />
+  You can set the flag defined below to `shap_enabled = True` and re-run this notebook to see the SHAP plots.
+- To reduce the computational overhead of each trial, a single example is sampled from the validation set to explain.<br />
+  For more thorough results, increase the sample size of explanations, or provide your own examples to explain.
+- SHAP cannot explain models using data with nulls; if your dataset has any, both the background data and
+  examples to explain will be imputed using the mode (most frequent values). This affects the computed
+  SHAP values, as the imputed samples may not match the actual data distribution.
+
+For more information on how to read Shapley values, see the [SHAP documentation](https://shap.readthedocs.io/en/latest/example_notebooks/overviews/An%20introduction%20to%20explainable%20AI%20with%20Shapley%20values.html).
+
+{% if has_datetime_columns %}
+> **NOTE:** SHAP run may take a long time with the datetime columns in the dataset.
+{% endif %}
+
+# COMMAND ----------
+
+# Set this flag to True and re-run the notebook to see the SHAP plots
+shap_enabled = False
+
+# COMMAND ----------
+
+if shap_enabled:
+    from shap import KernelExplainer, summary_plot
+{% if has_nulls %}
+    # SHAP cannot explain models using data with nulls.
+    # To enable SHAP to succeed, both the background data and examples to explain are imputed with the mode (most frequent values).
+    mode = {{ var_X_train }}.mode().iloc[0]
+
+{% endif %}
+    # Sample background data for SHAP Explainer. Increase the sample size to reduce variance.
+    train_sample = {{ var_X_train }}.sample(n=min({{ maximum_background_data_size }}, {{ var_X_train }}.shape[0]), random_state={{ random_state }}){% if has_nulls %}.fillna(mode){% endif %}
+
+
+    # Sample some rows from the validation set to explain. Increase the sample size for more thorough results.
+    example = {{ var_X_val }}.sample(n=min(100, {{ var_X_val }}.shape[0]), random_state={{ random_state }}){% if has_nulls %}.fillna(mode){% endif %}
+
+
+    # Use Kernel SHAP to explain feature importance on the sampled rows from the validation set.
+{% if use_predict_proba %}
+    predict = lambda x: {{ var_model }}.predict_proba(pd.DataFrame(x, columns={{ var_X_train }}.columns))
+    explainer = KernelExplainer(predict, train_sample, link="logit")
+{% else %}
+    predict = lambda x: {{ var_model }}.predict(pd.DataFrame(x, columns={{ var_X_train }}.columns))
+    explainer = KernelExplainer(predict, train_sample, link="identity")
+{% endif %}
+    shap_values = explainer.shap_values(example, l1_reg=False)
+{% if problem_type == "classification" %}
+    summary_plot(shap_values, example, class_names=model.classes_)
+{% else %}
+    summary_plot(shap_values, example)
+{% endif %}

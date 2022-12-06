@@ -1,0 +1,15 @@
+import mlflow
+import os
+
+mlflow.set_tracking_uri("databricks")
+os.environ["DATABRICKS_HOST"] = "{{host}}"
+os.environ["DATABRICKS_TOKEN"] = "{{token}}"
+
+%matplotlib inline
+
+from IPython.display import display
+
+# Define displayHTML for jupyter run
+def displayHTML(html_str):
+    from IPython.core.display import HTML
+    display(HTML(html_str))

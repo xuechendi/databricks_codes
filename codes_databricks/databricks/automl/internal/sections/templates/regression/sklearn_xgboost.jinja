@@ -1,0 +1,9 @@
+{% extends 'regression/sklearn_base.jinja' %}
+{% set model_name = 'XGBoost' %}
+{% set model_documentation_url = 'https://xgboost.readthedocs.io/en/stable/python/python_api.html#xgboost.XGBRegressor' %}
+{% set use_eval_set = true %}
+
+
+{% block model_definition %}
+XGBRegressor(**params)
+{% endblock %}

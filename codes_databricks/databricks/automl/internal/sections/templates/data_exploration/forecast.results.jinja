@@ -1,0 +1,17 @@
+{% import 'macros.jinja' as m with context %}
+{% set var_data = m.with_prefix('data') %}
+{% set var_tags = m.with_prefix('tags') %}
+
+import json
+
+
+# Fetch the run-id of the current job
+{{var_tags}} = json.loads(
+    dbutils.notebook.entry_point.getDbutils().notebook().getContext().toJson()
+).get("tags")
+
+{{var_data}} = {
+    "workflow_run_id": {{var_tags}}.get("runId", ""),
+}
+
+dbutils.notebook.exit(json.dumps({{var_data}}))

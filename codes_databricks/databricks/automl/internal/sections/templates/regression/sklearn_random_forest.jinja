@@ -1,0 +1,7 @@
+{% extends 'regression/sklearn_base.jinja' %}
+{% set model_name = 'Random Forest Regressor' %}
+{% set model_documentation_url = 'https://scikit-learn.org/stable/modules/generated/sklearn.ensemble.RandomForestRegressor.html' %}
+
+{% block model_definition %}
+RandomForestRegressor(**params)
+{% endblock %}

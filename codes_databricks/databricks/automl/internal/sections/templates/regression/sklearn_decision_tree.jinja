@@ -1,0 +1,7 @@
+{% extends 'regression/sklearn_base.jinja' %}
+{% set model_name = 'Decision Tree Regressor' %}
+{% set model_documentation_url = 'https://scikit-learn.org/stable/modules/generated/sklearn.tree.DecisionTreeRegressor.html' %}
+
+{% block model_definition %}
+DecisionTreeRegressor(**params)
+{% endblock %}

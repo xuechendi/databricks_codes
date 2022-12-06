@@ -1,0 +1,8 @@
+{# sklearn_decision_tree.jinja prepares the cell for training model using decision trees #}
+{% extends 'classification/sklearn_base.jinja' %}
+{% set model_name = 'Decision Tree' %}
+{% set model_documentation_url = 'https://scikit-learn.org/stable/modules/generated/sklearn.tree.DecisionTreeClassifier.html' %}
+
+{% block model_definition %}
+DecisionTreeClassifier(**params)
+{% endblock %}

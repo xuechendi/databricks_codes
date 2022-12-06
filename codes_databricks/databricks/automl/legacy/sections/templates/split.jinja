@@ -1,0 +1,38 @@
+{% import 'macros.jinja' as m with context %}
+{% set var_X = m.with_prefix('X') %}
+{% set var_y = m.with_prefix('y') %}
+{% set var_X_rem = m.with_prefix('X_rem') %}
+{% set var_y_rem = m.with_prefix('y_rem') %}
+
+%md ## Train - Validation - Test Split
+Split the input data into 3 sets:
+- Train (60% of the dataset used to train the model)
+- Validation (20% of the dataset used to tune the hyperparameters of the model)
+- Test (20% of the dataset used to report the true performance of the model on an unseen dataset)
+
+# COMMAND ----------
+
+from sklearn.model_selection import train_test_split
+{% if time_col %}
+
+# Given that {{ time_col }} is provided as the `time_col`, the data will be split based on time order.
+# The most recent data will be used as validation set, and thus shuffling when splitting the data is inappropriate.
+{{var_input_df}} = {{var_input_df}}.sort_values({{var_time_col}}).reset_index(drop=True)
+{% endif %}
+
+{{var_X}} = {{var_input_df}}.drop([{{var_target_col}}], axis=1)
+{{var_y}} = {{var_input_df}}[{{var_target_col}}]
+
+{% if time_col %}
+# Split out train data
+{{ var_X_train }}, {{ var_X_rem }}, {{ var_y_train }}, {{ var_y_rem }} = train_test_split({{ var_X }}, {{ var_y }}, train_size=0.6, shuffle=False)
+
+# Split remaining data equally for validation and test
+{{ var_X_val }}, {{ var_X_test }}, {{ var_y_val }}, {{ var_y_test }} = train_test_split({{ var_X_rem }}, {{ var_y_rem }}, test_size=0.5, shuffle=False)
+{% else %}
+# Split out train data
+{{ var_X_train }}, {{ var_X_rem }}, {{ var_y_train }}, {{ var_y_rem }} = train_test_split({{ var_X }}, {{ var_y }}, train_size=0.6, random_state={{ random_state }}{{ ", stratify=" + var_y if stratify }})
+
+# Split remaining data equally for validation and test
+{{ var_X_val }}, {{ var_X_test }}, {{ var_y_val }}, {{ var_y_test }} = train_test_split({{ var_X_rem }}, {{ var_y_rem }}, test_size=0.5, random_state={{ random_state }}{{ ", stratify=" + var_y_rem if stratify }})
+{% endif %}

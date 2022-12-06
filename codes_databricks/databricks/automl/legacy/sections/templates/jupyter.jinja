@@ -1,0 +1,27 @@
+from pyspark.sql import SparkSession
+spark = SparkSession.builder.master('local[2]').appName('jupyter').getOrCreate()
+sc = spark.sparkContext
+
+from unittest.mock import MagicMock
+
+ctx = MagicMock()
+ctx.toJson.return_value = '{"tags":{"runId": "abcdefg"}}'
+
+nb = MagicMock()
+nb.getContext.return_value = ctx
+
+dbu = MagicMock()
+dbu.notebook.return_value = nb
+
+dbutils = MagicMock()
+dbutils.notebook.entry_point.getDbutils.return_value = dbu
+
+# To ensure that the data passed to exit can be retrieved
+dbutils.notebook.exit.side_effect = lambda x: print(x)
+
+import os
+os.environ["SPARK_LOCAL_DIRS"] = "/tmp"
+
+def displayHTML(html_str):
+    from IPython.core.display import HTML
+    display(HTML(html_str))

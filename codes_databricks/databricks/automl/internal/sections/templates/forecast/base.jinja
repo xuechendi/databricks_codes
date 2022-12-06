@@ -1,0 +1,93 @@
+{# Title block for the training section #}
+%md {% block train_model_md_title %} {% endblock %}
+- Log relevant metrics to MLflow to track runs
+- All the runs are logged under [this MLflow experiment]({{ experiment_url }})
+- Change the model parameters and re-run the training cell to log a different trial to the MLflow experiment
+
+{# Block to define search space for ARIMA model #}
+{% block define_search_space_arima %} {% endblock %}
+
+# COMMAND ----------
+
+{# Description block for data aggregation #}
+{% block aggregation_md %}{% endblock %}
+
+# COMMAND ----------
+{# Block to generate the group columns that are used to de-dupe univariate or split multivariate timeseries #}
+{% block gen_group_cols %}{% endblock %}
+df_aggregated = {{ var_input_df }} \
+  .groupby(group_cols) \
+  .agg(y=({{ var_target_col }}, "avg")) \
+  .reset_index() \
+  .rename(columns={ {{ var_time_col }} : "ds" })
+
+{# Block to generate the column used to uniquely identify a timeseries in multi-series forecasting #}
+{% block gen_ts_id_col %}{% endblock %}
+{# Block to filter out the short time series for multi-series forecasting #}
+{% block filter_invalid_identities %}{% endblock %}
+df_aggregated.head()
+
+{# Block to disable informational message from prophet #}
+{% block disalbe_info_logging_prophet %}{% endblock %}
+
+# COMMAND ----------
+
+{# Block to define the structure of the results_pd to be returned #}
+{% block define_result_columns %}{% endblock %}
+
+{# Block to define the training function that returns the resutls_pd #}
+{% block define_training_function %} {% endblock %}
+
+{# Block to define the fail safe wrapper if necessary #}
+{% block define_fail_safe_wrapper %}{% endblock %}
+
+# COMMAND ----------
+
+import mlflow
+{# Block to import functions and classes from automl_runtime #}
+{% block automl_runtime_imports %}{% endblock %}
+
+{# Block to train the model and log information in a mlflow run #}
+{% block train_and_log %}{% endblock %}
+
+# COMMAND ----------
+
+{# Block to display the results #}
+{% block display_results %}{% endblock %}
+
+# COMMAND ----------
+
+%md ## Analyze the predicted results
+
+# COMMAND ----------
+
+# Load the model
+run_id = {{ var_run }}.info.run_id
+loaded_model = mlflow.pyfunc.load_model(f"runs:/{run_id}/model")
+
+# COMMAND ----------
+
+{% block forecast_predict %}{% endblock %}
+
+{# Block to set use_plotly flag #}
+{% block set_plotly_flag_prophet %}{% endblock %}
+
+{# Block to get the prophet model from the mlflow wrapper #}
+{% block get_model_from_wrapper_prophet %}{% endblock %}
+
+{# Block to plot the forecasted points #}
+{% block add_forecasts_plot %}{% endblock %}
+
+{# Block to plot the forecast components #}
+{% block add_components_plot %}{% endblock %}
+
+# COMMAND ----------
+
+%md ## Show the predicted results
+
+# COMMAND ----------
+
+{# Block to predict future with the default horizon #}
+{% block predict_cols %}{% endblock %}
+forecast_pd = forecast_pd.reset_index()
+display(forecast_pd[predict_cols].tail({{ var_horizon }}))

@@ -1,0 +1,40 @@
+{# macros.jinja defines template macros to be used across the section templates #}
+{% macro with_prefix(name) %}{{ prefix }}_{{ name }}{% endmacro %}
+
+{% macro gen_ts_id_col(df, cols) %}
+{% set params = [] %}
+{% for col in cols %}
+{% set params = params.append( 'x["' + col+ '"].astype(str)' ) %}
+{% endfor %}
+{{df}} = {{df}}.assign(ts_id=lambda x:{{ params|join('+"-"+') }})
+{% endmacro %}
+
+{# macro to render a python string list with double quote strings #}
+{% macro render_string_list(lst) %}
+{% set params = [] %}
+{% for elem in lst %}
+{% set params = params.append('"' + elem +'"') %}
+{% endfor %}
+[{{ params|join(", ") }}]
+{%- endmacro %}
+
+{% macro define_m_search_space(frequency_unit, offset_alias_map) %}
+{% set candidates = {"W": [1, 4], "D": [1, 7], "H": [1], "min": [1], "S": [1] } %}
+{% set selected_periods = candidates[offset_alias_map[frequency_unit]] %}
+# Define the search space of seasonal period m
+seasonal_periods = {{ selected_periods }}
+{% endmacro %}
+
+{% macro validate_all_models_trained(var_training_results) %}
+
+  # Check whether every time series's model is trained
+  ts_models_trained = set({{ var_training_results }}["ts_id"].unique().to_list())
+  ts_ids = set(df_aggregated["ts_id"].unique().tolist())
+
+  if len(ts_models_trained) == 0:
+    raise Exception("Trial unable to train models for any identities. Please check the training cell for error details")
+
+  if ts_ids != ts_models_trained:
+    mlflow.log_param("partial_model", True)
+    print(f"WARNING: Models not trained for the following identities: {ts_ids.difference(ts_models_trained)}")
+{% endmacro %}

@@ -1,0 +1,12 @@
+{% include "config.jinja" %}
+
+{% if multivariate %}
+{# Required to ensure that list is rendered with double quotes instead of single #}
+{% set params = [] %}
+{% for col in identity_col %}
+{% set params = params.append('"' + col +'"') %}
+{% endfor %}
+{{ var_id_cols }} = [{{ params|join(", ") }}]
+
+{% endif %}
+{{ var_horizon }} = {{ horizon }}

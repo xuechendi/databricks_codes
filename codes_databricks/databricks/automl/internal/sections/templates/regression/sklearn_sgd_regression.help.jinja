@@ -1,0 +1,9 @@
+{% extends 'sklearn_help.jinja' %}
+
+{% block imports %}
+from sklearn.linear_model import SGDRegressor
+{% endblock %}
+
+{% block model_help %}
+help(SGDRegressor)
+{% endblock %}

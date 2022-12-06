@@ -1,0 +1,8 @@
+{# sklearn_random_forest.jinja prepares the cell for training model using random forest #}
+{% extends 'classification/sklearn_base.jinja' %}
+{% set model_name = 'Random Forest' %}
+{% set model_documentation_url = 'https://scikit-learn.org/stable/modules/generated/sklearn.ensemble.RandomForestClassifier.html' %}
+
+{% block model_definition %}
+RandomForestClassifier(**params)
+{% endblock %}

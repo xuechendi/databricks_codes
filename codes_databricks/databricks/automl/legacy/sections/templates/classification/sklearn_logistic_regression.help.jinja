@@ -1,0 +1,9 @@
+{% extends 'sklearn_help.jinja' %}
+
+{% block imports %}
+from sklearn.linear_model import LogisticRegression
+{% endblock %}
+
+{% block model_help %}
+help(LogisticRegression)
+{% endblock %}

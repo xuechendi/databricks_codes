@@ -1,0 +1,9 @@
+{% extends 'sklearn_help.jinja' %}
+
+{% block imports %}
+from xgboost import XGBRegressor
+{% endblock %}
+
+{% block model_help %}
+help(XGBRegressor)
+{% endblock %}

@@ -1,0 +1,29 @@
+{% import 'macros.jinja' as m with context %}
+from pandas import Timestamp
+from sklearn.compose import ColumnTransformer
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import OneHotEncoder
+
+from databricks.automl_runtime.sklearn import DatetimeImputer
+from databricks.automl_runtime.sklearn import TimestampTransformer
+from sklearn.preprocessing import StandardScaler
+
+imputers = {
+{% for col, imputer in timestamp_columns_and_imputers.items() %}
+  "{{ col }}": {{ imputer.get_sklearn_imputer() }},
+{% endfor %}
+}
+
+{{ var_datetime_transformers }} = []
+
+for col in {{ m.render_string_list(timestamp_columns_and_imputers.keys()) }}:
+    ohe_transformer = ColumnTransformer(
+        [("ohe", OneHotEncoder(sparse=False, handle_unknown="ignore"), [TimestampTransformer.HOUR_COLUMN_INDEX])],
+        remainder="passthrough")
+    timestamp_preprocessor = Pipeline([
+        (f"impute_{col}", imputers[col]),
+        (f"transform_{col}", TimestampTransformer()),
+        (f"onehot_encode_{col}", ohe_transformer),
+        (f"standardize_{col}", StandardScaler()),
+    ])
+    {{ var_datetime_transformers }}.append((f"timestamp_{col}", timestamp_preprocessor, [col]))

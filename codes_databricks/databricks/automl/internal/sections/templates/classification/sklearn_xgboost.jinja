@@ -1,0 +1,14 @@
+{# sklearn_xgboost.jinja prepares the cell for training model using xgboost #}
+{% extends 'classification/sklearn_base.jinja' %}
+{% set model_name = 'XGBoost' %}
+{% set model_documentation_url = 'https://xgboost.readthedocs.io/en/stable/python/python_api.html#xgboost.XGBClassifier' %}
+{% set use_eval_set = true %}
+{% set need_target_encoder = true %}
+
+
+{% block model_definition %}
+TransformedTargetClassifier(
+        classifier=XGBClassifier(**params),
+        transformer=LabelEncoder()  # XGBClassifier requires the target values to be integers between 0 and n_class-1
+    )
+{% endblock %}

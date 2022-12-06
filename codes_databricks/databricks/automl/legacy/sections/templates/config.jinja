@@ -1,0 +1,6 @@
+import mlflow
+import databricks.automl_runtime
+
+{% for key in config %}
+{{ key }} = "{{ config[key] }}"
+{% endfor %}

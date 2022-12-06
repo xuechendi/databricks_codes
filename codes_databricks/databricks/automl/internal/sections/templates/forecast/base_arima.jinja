@@ -1,0 +1,62 @@
+{% extends 'forecast/base.jinja' %}
+{% import 'macros.jinja' as m with context %}
+
+{% block train_model_md_title %}
+## Train ARIMA model
+{% endblock %}
+
+{% block define_search_space_arima %}
+# COMMAND ----------
+{{ m.define_m_search_space(frequency_unit, offset_alias_map) }}
+{% endblock %}
+
+{% block define_training_function %}
+def arima_training(history_pd):
+  from databricks.automl_runtime.forecast.pmdarima.training import ArimaEstimator
+
+  arima_estim = ArimaEstimator(horizon={{ var_horizon }}, frequency_unit={{ var_frequency_unit }}, metric="{{ metric }}",
+                              seasonal_periods=seasonal_periods, num_folds={{ num_folds }})
+
+  {% block create_results_pd %}{% endblock %} {# Block to run the estimator and create results_pd #}
+
+  return results_pd[result_columns]
+{% endblock define_training_function %}
+
+{% block train_and_log %}
+with mlflow.start_run(experiment_id="{{ experiment_id }}", run_name="ARIMA") as {{ var_run }}:
+  mlflow.set_tag("estimator_name", "ARIMA")
+
+  {% block call_training %}{% endblock %} {# Block to call the training function #}
+  {% block validate_all_models_trained %}{% endblock %} {# Block to check if every time series's model is trained for multi-series forecasting #}
+
+  # Log metrics to mlflow
+  metric_names = ["mse", "rmse", "mae", "mape", "mdape", "smape", "coverage"]
+  avg_metrics = arima_results[metric_names].mean().to_frame(name="mean_metrics").reset_index()
+  avg_metrics["index"] = "val_" + avg_metrics["index"].astype(str)
+  avg_metrics.set_index("index", inplace=True)
+  mlflow.log_metrics(avg_metrics.to_dict()["mean_metrics"])
+
+  # Save the model to mlflow
+  {% block create_arima_mlflow_model %}{% endblock %}
+
+  # Generate sample input dataframe
+  sample_input = {{ var_input_df }}.tail(5).to_pandas()
+  sample_input[time_col] = pd.to_datetime(sample_input[time_col])
+  sample_input.drop(columns=[target_col], inplace=True)
+
+  mlflow_arima_log_model(arima_model, sample_input=sample_input)
+{% endblock train_and_log %}
+
+{% block display_results %}
+avg_metrics
+{% endblock %}
+
+{% block forecast_predict %}
+# Predict future with the default horizon
+forecast_pd = loaded_model._model_impl.python_model.predict_timeseries()
+{% endblock %}
+
+{% block add_forecasts_plot %}
+# COMMAND ----------
+from databricks.automl_runtime.forecast.pmdarima.utils import plot
+{% endblock %}

@@ -1,0 +1,12 @@
+{# sklearn_logistic_regression.jinja prepares the cell for training model using logistic regression #}
+{% extends 'classification/sklearn_base.jinja' %}
+{% set model_name = 'Logistic Regression' %}
+{% set model_documentation_url = 'https://scikit-learn.org/stable/modules/generated/sklearn.linear_model.LogisticRegression.html' %}
+
+{% block model_definition %}
+{% if multiclass is sameas true %}
+LogisticRegression(multi_class="multinomial", **params)
+{% else %}
+LogisticRegression(**params)
+{% endif %}
+{% endblock %}

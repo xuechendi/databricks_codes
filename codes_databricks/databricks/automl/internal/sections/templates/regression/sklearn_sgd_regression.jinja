@@ -1,0 +1,7 @@
+{% extends 'regression/sklearn_base.jinja' %}
+{% set model_name = 'SGD Regression' %}
+{% set model_documentation_url = 'https://scikit-learn.org/stable/modules/generated/sklearn.linear_model.SGDRegressor.html' %}
+
+{% block model_definition %}
+SGDRegressor(**params)
+{% endblock %}

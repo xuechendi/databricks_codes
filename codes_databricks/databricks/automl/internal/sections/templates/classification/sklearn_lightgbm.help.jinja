@@ -1,0 +1,10 @@
+{% extends 'sklearn_help.jinja' %}
+
+{% block imports %}
+import lightgbm
+from lightgbm import LGBMClassifier
+{% endblock %}
+
+{% block model_help %}
+help(LGBMClassifier)
+{% endblock %}

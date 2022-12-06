@@ -1,0 +1,13 @@
+{# lightgbm_classifier.jinja prepares the cell for training model using LightGBM #}
+{% extends 'classification/sklearn_base.jinja' %}
+{% set model_name = 'lightgbm' %}
+{% set use_eval_set = true %}
+
+
+{% block model_definition %}
+LGBMClassifier(
+{% for key in parameter_dict %}
+  {{key}}={{parameter_dict[key]}},
+{% endfor %}
+)
+{% endblock %}

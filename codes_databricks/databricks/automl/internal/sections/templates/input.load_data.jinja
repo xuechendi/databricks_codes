@@ -1,0 +1,82 @@
+{% import 'macros.jinja' as m with context %}
+{% set var_temp_dir = m.with_prefix('temp_dir') %}
+{% set var_client = m.with_prefix('client') %}
+{% set var_data_path = m.with_prefix('data_path') %}
+{% set var_file_path = m.with_prefix('file_path') %}
+
+%md ## Load Data
+{% if sample_fraction %}
+> **NOTE:** The dataset loaded below is a sample of the original dataset. Try to run AutoML with a cluster with memory-optimized instance types to increase the sample size.
+{# Keep consistent with the warning message for sampling at mlflow/web/js/src/experiment-tracking/components/automl/AutoMLWarningText.js #}
+{% if problem_type == "classification" %}
+Stratified sampling using pyspark's [sampleBy](https://spark.apache.org/docs/latest/api/python/reference/api/pyspark.sql.DataFrameStatFunctions.sampleBy.html)
+method is used to ensure that the distribution of the target column is retained.
+{% else %}
+Pyspark's [sample](https://spark.apache.org/docs/latest/api/python/reference/api/pyspark.sql.DataFrame.sample.html) method
+is used to sample this dataset.
+{% endif %}
+<br/>
+> Rows were sampled with a sampling fraction of **{{ sample_fraction }}**
+{% endif %}
+
+# COMMAND ----------
+
+{% if load_from_dbfs %}
+{% if load_format == "pandas" %}
+# Load input data into a pandas DataFrame.
+import pandas as pd
+{{var_pdf}} = pd.read_parquet("{{ dbfs_path }}")
+{% elif load_format == "pyspark.pandas" %}
+# Load input data into a spark DataFrame.
+import pandas as pd
+import pyspark.pandas as ps
+{{var_pdf}} = ps.from_pandas(pd.read_parquet("{{ dbfs_path }}"))
+{% endif %}
+{% else %}
+from mlflow.tracking import MlflowClient
+import os
+import uuid
+import shutil
+{% if load_format == "pandas" %}
+import pandas as pd
+
+# Create temp directory to download input data from MLflow
+{{ var_temp_dir }} = os.path.join(os.environ["SPARK_LOCAL_DIRS"], "tmp", str(uuid.uuid4())[:8])
+os.makedirs({{ var_temp_dir }})
+
+{% elif load_format == "pyspark.pandas" %}
+import pandas as pd
+import pyspark.pandas as ps
+
+# Create temp directory to download input data from MLflow
+{{ var_temp_dir }} = os.path.join("/dbfs/tmp/", str(uuid.uuid4())[:8])
+os.makedirs({{ var_temp_dir }})
+{% endif %}
+
+# Download the artifact and read it into a pandas DataFrame
+{{ var_client }} = MlflowClient()
+{{ var_data_path }} = {{ var_client }}.download_artifacts("{{ data_run_id }}", "data", {{ var_temp_dir }})
+
+{% if load_format == "pandas" %}
+{{ var_pdf }} = pd.read_parquet(os.path.join({{ var_data_path }}, "training_data"))
+# Delete the temp data
+shutil.rmtree({{ var_temp_dir }})
+{% elif load_format == "pyspark.pandas" %}
+{{ var_file_path }} = os.path.join({{ var_data_path }}, "training_data")
+{{ var_file_path }} = {% if file_prefix %}"{{ file_prefix }}" + {% endif %}{{ var_file_path }}
+{{ var_pdf }} = ps.from_pandas(pd.read_parquet({{ var_file_path }}))
+{% endif %}
+{% endif %}
+
+# Preview data
+{{var_pdf}}.head(5)
+
+{%if has_feature_store_joins %}
+# COMMAND ----------
+
+{% if load_from_dbfs %}
+{{ var_feature_spec_path }} = "{{ dbfs_path }}/feature_spec.yaml"
+{% else %}
+{{ var_feature_spec_path }} = "runs:/{{ data_run_id }}/data/feature_spec.yaml"
+{%endif %}
+{%endif %}
