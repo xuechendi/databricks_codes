@@ -1,0 +1,10 @@
+{% extends 'regression/sklearn_base.jinja' %}
+{% set model_name = 'Decision Tree Regressor' %}
+
+{% block model_definition %}
+DecisionTreeRegressor(
+{% for key in parameter_dict %}
+  {{key}}={{parameter_dict[key]}},
+{% endfor %}
+)
+{% endblock %}

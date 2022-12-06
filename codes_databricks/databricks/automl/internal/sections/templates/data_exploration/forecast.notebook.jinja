@@ -1,0 +1,171 @@
+{% import 'macros.jinja' as m with context %}
+{% set var_temp_dir = m.with_prefix('temp_dir') %}
+{% set var_client = m.with_prefix('client') %}
+{% set var_data_path = m.with_prefix('data_path') %}
+{% set var_file_path = m.with_prefix('file_path') %}
+
+
+%md # Data Exploration
+This notebook performs exploratory data analysis on the dataset.
+To expand on the analysis, attach this notebook to the **{{ cluster_name }}** cluster and rerun it.
+- Explore completed trials in the [MLflow experiment]({{ experiment_url }})
+- Navigate to the parent notebook [here]({{ driver_notebook_url }}) (If you launched the AutoML experiment using the Experiments UI, this link isn't very useful.)
+
+Runtime Version: _{{ runtime_version }}_
+
+# COMMAND ----------
+
+{% if load_from_dbfs %}
+# Load the data into a pyspark.pandas DataFrame
+import pandas as pd
+import pyspark.pandas as ps
+import databricks.automl_runtime
+
+ps.options.plotting.backend = "matplotlib"
+
+{{ var_df }} = ps.from_pandas(pd.read_parquet("{{ dbfs_path }}")).spark.cache()
+{% else %}
+import os
+import uuid
+import pandas as pd
+import shutil
+import databricks.automl_runtime
+import pyspark.pandas as ps
+
+from mlflow.tracking import MlflowClient
+
+ps.options.plotting.backend = "matplotlib"
+
+# Download input data from mlflow into a pyspark.pandas DataFrame
+# create temp directory to download data
+{{ var_temp_dir }} = os.path.join("/dbfs/tmp", str(uuid.uuid4())[:8])
+os.makedirs({{ var_temp_dir }})
+
+# download the artifact and read it
+{{ var_client }} = MlflowClient()
+{{ var_data_path }} = {{ var_client }}.download_artifacts("{{ data_run_id }}", "data", {{ var_temp_dir }})
+{{ var_file_path }} = os.path.join({{ var_data_path }}, "training_data")
+{{ var_file_path }}  = {% if file_prefix %}"{{ file_prefix }}" + {% endif %}{{ var_file_path }}
+
+{{ var_df }} = ps.from_pandas(pd.read_parquet({{ var_file_path }})).spark.cache()
+{% endif %}
+
+{{ var_target_col }} = "{{ target_col }}"
+time_col = "{{ time_col }}"
+{% if multivariate %}
+id_cols = {{ m.render_string_list(identity_col) }}
+{% endif %}
+
+# COMMAND ----------
+
+%md ### Aggregate data
+
+# COMMAND ----------
+
+{% if multivariate %}
+group_cols = [time_col] + id_cols
+{% else %}
+group_cols = [time_col]
+{% endif %}
+
+df_aggregated = {{ var_df }} \
+  .groupby(group_cols) \
+  .agg({{ target_col }}=({{ var_target_col }}, "avg")) \
+  .reset_index()
+
+# COMMAND ----------
+
+%md ## Time column Analysis
+
+# COMMAND ----------
+
+%md Show the time range for the time series
+
+# COMMAND ----------
+
+{% if multivariate %}
+{{ var_time_range }} = df_aggregated.groupby(id_cols).agg(min=(time_col, "min"), max=(time_col, "max"))
+display({{ var_time_range }}.reset_index())
+{% else %}
+{{ var_time_range }} = df_aggregated[time_col].agg(["min", "max"])
+{{ var_time_range }}
+{% endif %}
+
+# COMMAND ----------
+
+%md ## Target Value Analysis
+
+# COMMAND ----------
+
+%md Time series target value status
+
+# COMMAND ----------
+
+{% if multivariate %}
+selected_cols = id_cols + [{{ var_target_col }}]
+{{ var_target_stats_df }} = df_aggregated[selected_cols].groupby(id_cols).describe()
+{% else %}
+{{ var_target_stats_df }} = df_aggregated[{{ var_target_col }}].describe()
+{% endif %}
+display({{ var_target_stats_df }}.reset_index())
+
+# COMMAND ----------
+
+%md Check the number of missing values in the target column.
+
+# COMMAND ----------
+
+def num_nulls(x):
+  num_nulls = x.isnull().sum()
+  return pd.Series(num_nulls)
+
+{% if multivariate %}
+{{ var_null_stat_df }} = df_aggregated[selected_cols].groupby(id_cols).apply(num_nulls)[{{ var_target_col }}]
+display({{ var_null_stat_df }}.to_frame().reset_index())
+{% else %}
+{{ var_null_stat_df }} = df_aggregated.apply(num_nulls)[{{ var_target_col }}]
+{{ var_null_stat_df }}
+{% endif %}
+
+
+
+# COMMAND ----------
+
+%md ## Visualize the Data
+
+# COMMAND ----------
+
+{% if multivariate %}
+# Select one id from id columns
+idx = df_aggregated[id_cols].to_pandas().astype(str).agg('-'.join, axis=1).unique()[0] # change index here to see other identities
+idx_list = idx.split("-")
+{% set params = [] %}
+{% for key in identity_col  %}
+{% set params = params.append( '(df["' + key+ '"] == idx_list[' + loop.index0|string() +"])" )%}
+{% endfor %}
+df_sub = df.loc[{{ params|join('&') }}]
+{% else %}
+df_sub = df_aggregated
+{% endif %}
+
+df_sub = df_sub.filter(items=[time_col, {{ var_target_col }}])
+df_sub.set_index(time_col, inplace=True)
+df_sub[{{ var_target_col }}] = df_sub[{{ var_target_col }}].astype("float")
+
+fig = df_sub.plot()
+
+# COMMAND ----------
+
+{% if not load_from_dbfs %}
+# delete the temp data
+shutil.rmtree({{ var_temp_dir }})
+{% endif %}
+{% if "other" in alerts.keys() %}
+
+# COMMAND ----------
+%md ## Additional AutoML Alerts
+
+{% for alert_str in alerts["other"] %}
+- {{ alert_str }}
+{% endfor %}
+{% endif %}

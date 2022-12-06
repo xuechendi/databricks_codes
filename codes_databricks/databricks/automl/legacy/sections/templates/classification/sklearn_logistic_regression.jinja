@@ -1,0 +1,19 @@
+{# sklearn_logistic_regression.jinja prepares the cell for training model using logistic regression #}
+{% extends 'classification/sklearn_base.jinja' %}
+{% set model_name = 'Logistic Regression' %}
+
+{% block model_definition %}
+{% if multiclass is sameas true %}
+LogisticRegression(
+{% for key in parameter_dict %}
+  {{key}}={{parameter_dict[key]}},
+{% endfor %}
+  multi_class="multinomial")
+{% else %}
+LogisticRegression(
+{% for key in parameter_dict %}
+  {{key}}={{parameter_dict[key]}},
+{% endfor %}
+)
+{% endif %}
+{% endblock %}

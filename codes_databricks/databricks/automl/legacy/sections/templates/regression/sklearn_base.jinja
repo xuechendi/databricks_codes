@@ -1,0 +1,84 @@
+{# sklearn_base.jinja is the base template that can be inherited from to generate model specific templates #}
+{% import 'macros.jinja' as m with context %}
+
+{# Redefine the block into a macro so that we can use it in more than one locations #}
+{% macro model_definition() %}{% block model_definition %}{% endblock %}{% endmacro %}
+
+{# define internal variables with prefix for ease of use #}
+{% set var_regressor = m.with_prefix('regressor') %}
+{% set var_val_metrics = m.with_prefix('val_metrics') %}
+{% set var_test_metrics = m.with_prefix('test_metrics') %}
+
+import mlflow
+{% block imports %}{% endblock %}
+import sklearn
+from sklearn import set_config
+from sklearn.pipeline import Pipeline
+
+set_config(display='diagram')
+
+{{ var_regressor }} = {{ model_definition() }}
+{{ var_model }} = Pipeline([
+    ("column_selector", {{ var_column_selector }}),
+{% if var_preprocessor != None %}
+    ("{{ var_preprocessor }}", {{ var_preprocessor }}),
+{% endif %}
+    ("regressor", {{ var_regressor }}),
+])
+{% if use_eval_set|default(false) %}
+{% set var_pipeline_val = var_pipeline + "_val" %}
+{% set var_X_val_processed = var_X_val + "_processed" %}
+
+# Create a separate pipeline to transform the validation dataset. This is used for early stopping.
+{{ var_pipeline_val }} = Pipeline([
+    ("column_selector", {{ var_column_selector }}),
+{% if var_preprocessor != None %}
+    ("{{ var_preprocessor }}", {{ var_preprocessor }}),
+{% endif %}
+])
+
+mlflow.sklearn.autolog(disable=True)
+{{ var_pipeline_val }}.fit({{ var_X_train }}, {{ var_y_train }})
+{{ var_X_val_processed }} = {{ var_pipeline_val }}.transform({{ var_X_val }})
+{% endif %}
+
+{{ var_model }}
+
+# COMMAND ----------
+
+{% set fit_params = [] %}
+{% set _ =  fit_params.append(var_X_train) %}
+{% set _ =  fit_params.append(var_y_train) %}
+
+{% if use_eval_set|default(false) %}
+  {% if model_name == 'lightgbm' %}
+    {% set _ =  fit_params.append('regressor__callbacks=[lightgbm.early_stopping(5), lightgbm.log_evaluation(0)]') %}
+  {% else %}
+    {% set _ =  fit_params.append('regressor__early_stopping_rounds=5') %}
+    {% set _ =  fit_params.append('regressor__verbose=False') %}
+  {% endif %}
+  {% set _ =  fit_params.append('regressor__eval_set='+'[('+var_X_val_processed+','+var_y_val+')]') %}
+{% endif %}
+
+# Enable automatic logging of input samples, metrics, parameters, and models
+mlflow.sklearn.autolog(log_input_examples=True, silent=True)
+
+with mlflow.start_run(experiment_id="{{ experiment_id }}", run_name="{{ model_name | camelcase }}") as {{ var_run }}:
+    {{ var_model }}.fit({{ fit_params|join(", ") }})
+    {#
+    - Most logged metrics use functions from sklearn.metrics, and are logged in mlflow repo's mlflow/sklearn/utils.py _get_regressor_metrics
+    - training_score is computed by directly calling the model's score function in mlflow repo's mlflow/sklearn/__init__.py _log_posttraining_metadata
+    However, based on sklearn's source code, it just uses sklearn.metrics.r2_score: https://github.com/scikit-learn/scikit-learn/blob/b3ea3ed6a/sklearn/base.py#L554
+    #}
+
+    # Training metrics are logged by MLflow autologging
+    # Log metrics for the validation set
+    {{ var_val_metrics }} = mlflow.sklearn.eval_and_log_metrics({{ var_model }}, {{ var_X_val }}, {{ var_y_val }}, prefix="val_")
+
+    # Log metrics for the test set
+    {{ var_test_metrics }} = mlflow.sklearn.eval_and_log_metrics({{ var_model }}, {{ var_X_test }}, {{ var_y_test }}, prefix="test_")
+
+    # Display the logged metrics
+    {{ var_val_metrics }} = {k.replace("val_", ""): v for k, v in {{ var_val_metrics }}.items()}
+    {{ var_test_metrics }} = {k.replace("test_", ""): v for k, v in {{ var_test_metrics }}.items()}
+    display(pd.DataFrame([{{ var_val_metrics }}, {{ var_test_metrics }}], index=["validation", "test"]))

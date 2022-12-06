@@ -1,0 +1,12 @@
+{% extends 'regression/sklearn_base.jinja' %}
+{% set model_name = 'XGBoost' %}
+{% set use_eval_set = true %}
+
+
+{% block model_definition %}
+XGBRegressor(
+{% for key in parameter_dict %}
+  {{key}}={{parameter_dict[key]}},
+{% endfor %}
+)
+{% endblock %}

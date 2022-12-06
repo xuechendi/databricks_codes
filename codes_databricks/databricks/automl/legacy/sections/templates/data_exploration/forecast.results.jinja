@@ -1,0 +1,26 @@
+{% import 'macros.jinja' as m with context %}
+{% set var_data = m.with_prefix('data') %}
+{% set var_tags = m.with_prefix('tags') %}
+
+import json
+
+{% if multivariate %}
+df_count = {{ var_target_stats_df }}[{{ var_target_col }}]["count"].reset_index()
+{{m.gen_ts_id_col("df_count", identity_col)}}
+df_count = df_count.set_index("ts_id")["count"].to_dict()
+{% else %}
+df_count = {"total_num": {{ var_target_stats_df }}["count"]}
+{% endif %}
+
+# Fetch the run-id of the current job
+{{var_tags}} = json.loads(
+    dbutils.notebook.entry_point.getDbutils().notebook().getContext().toJson()
+).get("tags")
+
+{{var_data}} = {
+    "workflow_run_id": {{var_tags}}.get("runId", ""),
+    "num_nulls": {{ var_null_stat_df }}.to_list(),
+    "count": df_count
+}
+
+dbutils.notebook.exit(json.dumps({{var_data}}))

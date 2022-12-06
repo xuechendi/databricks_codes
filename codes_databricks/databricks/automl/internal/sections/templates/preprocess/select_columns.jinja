@@ -1,0 +1,9 @@
+{% import 'macros.jinja' as m with context %}
+%md ### Select supported columns
+Select only the columns that are supported. This allows us to train a model that can predict on a dataset that has extra columns that are not used in training.
+`{{ m.render_string_list(unsupported_cols) }}` are dropped in the pipelines. See the Alerts tab of the AutoML Experiment page for details on why these columns are dropped.
+# COMMAND ----------
+
+from databricks.automl_runtime.sklearn.column_selector import ColumnSelector
+{{ var_supported_cols }} = {{ m.render_string_list(supported_cols) }}
+{{ var_column_selector }} = ColumnSelector({{ var_supported_cols }})

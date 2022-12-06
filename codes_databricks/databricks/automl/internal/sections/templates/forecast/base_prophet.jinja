@@ -1,0 +1,102 @@
+{% extends 'forecast/base.jinja' %}
+
+{% block train_model_md_title %}
+## Train Prophet model
+{% endblock %}
+
+{% block disalbe_info_logging_prophet %}
+# COMMAND ----------
+import logging
+
+# disable informational messages from prophet
+logging.getLogger("py4j").setLevel(logging.WARNING)
+{% endblock %}
+
+{% block define_training_function %}
+def prophet_training(history_pd):
+  from hyperopt import hp
+  from databricks.automl_runtime.forecast.prophet.forecast import ProphetHyperoptEstimator
+
+  seasonality_mode = ["additive", "multiplicative"]
+  search_space =  {
+    "changepoint_prior_scale": hp.loguniform("changepoint_prior_scale", -6.9, -0.69),
+    "seasonality_prior_scale": hp.loguniform("seasonality_prior_scale", -6.9, 2.3),
+    "holidays_prior_scale": hp.loguniform("holidays_prior_scale", -6.9, 2.3),
+    "seasonality_mode": hp.choice("seasonality_mode", seasonality_mode)
+  }
+{% if country_holidays %}
+  country_holidays="{{ country_holidays }}"
+{% else %}
+  country_holidays = None
+{% endif %}
+  {% block set_run_in_parallel %}{% endblock %} {# Block to set run_parallel flag for hyperopt #}
+
+  hyperopt_estim = ProphetHyperoptEstimator(horizon={{ var_horizon }}, frequency_unit={{ var_frequency_unit }}, metric="{{ metric }}",interval_width={{ interval_width }},
+                   country_holidays=country_holidays, search_space=search_space, num_folds={{ num_folds }}, max_eval={{ max_evals }}, trial_timeout={{ timeout }},
+                   random_state={{ random_state }}, is_parallel=run_parallel)
+
+  {% block create_results_pd %}{% endblock %} {# Block to run the estimator and create results_pd #}
+
+  return results_pd[result_columns]
+{% endblock define_training_function %}
+
+{% block train_and_log %}
+with mlflow.start_run(experiment_id="{{ experiment_id }}", run_name="PROPHET") as {{ var_run }}:
+  mlflow.set_tag("estimator_name", "Prophet")
+{% if country_holidays %}
+  mlflow.log_param("holiday_country", "{{ country_holidays }}")
+{% endif %}
+  mlflow.log_param("interval_width", {{ interval_width }})
+
+  {% block call_training %}{% endblock %} {# Block to call the training function #}
+  {% block validate_all_models_trained %}{% endblock %} {# Block to check if every time series's model is trained for multi-series forecasting #}
+
+  # Log the metrics to mlflow
+  avg_metrics = forecast_results[["mse", "rmse", "mae", "mape", "mdape", "smape", "coverage"]].mean().to_frame(name="mean_metrics").reset_index()
+  avg_metrics["index"] = "val_" + avg_metrics["index"].astype(str)
+  avg_metrics.set_index("index", inplace=True)
+  mlflow.log_metrics(avg_metrics.to_dict()["mean_metrics"])
+
+  {% block save_prophet_model %}{% endblock %} {# Block to create mlflow model wrapper and save it #}
+{% endblock train_and_log %}
+
+{% block display_results %}
+forecast_results.head(5)
+{% endblock %}
+
+{% block set_plotly_flag_prophet %}
+# COMMAND ----------
+# Plotly plots is turned off by default because it takes up a lot of storage.
+# Set this flag to True and re-run the notebook to see the interactive plots with plotly
+use_plotly = False
+{% endblock %}
+
+{% block add_forecasts_plot %}
+# COMMAND ----------
+%md ### Plot the forecast with change points and trend
+Plot the forecast using the `plot` method with your forecast dataframe. You can use `prophet.plot.add_changepoints_to_plot` to overlay significant changepoints. An interactive figure can be created with plotly. 
+
+# COMMAND ----------
+from prophet.plot import add_changepoints_to_plot, plot_plotly
+
+if use_plotly:
+    fig = plot_plotly(model, predict_pd, changepoints=True, trend=True, figsize=(1200, 600))
+else:
+    fig = model.plot(predict_pd)
+    a = add_changepoints_to_plot(fig.gca(), model, predict_pd)
+fig
+{% endblock %}
+
+{% block add_components_plot %}
+# COMMAND ----------
+%md ### Plot the forecast components
+Use the `Prophet.plot_components` method to see the components. By default you'll see the trend, yearly seasonality, and weekly seasonality of the time series. You can also include holidays. An interactive figure can be created with plotly. 
+
+# COMMAND ----------
+from prophet.plot import plot_components_plotly
+if use_plotly:
+    fig = plot_components_plotly(model, predict_pd, figsize=(900, 400))
+    fig.show()
+else:
+    fig = model.plot_components(predict_pd)
+{% endblock %}

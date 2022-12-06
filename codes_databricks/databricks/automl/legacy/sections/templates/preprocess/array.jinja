@@ -1,0 +1,20 @@
+{% import 'macros.jinja' as m with context %}
+{% set var_pipeline = m.with_prefix('pipeline') %}
+%md ### Array columns
+
+# COMMAND ----------
+import numpy as np
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import FunctionTransformer, StandardScaler
+
+def concat_arrays(df):
+    """Concatenate all the array columns (if more than one) into a single numpy array."""
+    return np.array([np.concatenate(row) for row in df.values])
+
+
+{{var_pipeline}} = Pipeline(steps=[
+    ("concat", FunctionTransformer(concat_arrays)),
+    ("standardize", StandardScaler()),
+])
+
+{{ var_array_transformers }} = [["array", {{var_pipeline}}, {{ m.render_string_list(array_cols) }}]]

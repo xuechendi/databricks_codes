@@ -1,0 +1,31 @@
+{% import 'macros.jinja' as m with context %}
+%md #### Medium-cardinality categoricals
+Convert each medium-cardinality categorical column into a numerical representation.
+Each string column is hashed to {{ num_hash_output_cols }} float columns.
+Each numeric column is imputed with zeros.
+
+# COMMAND ----------
+
+from sklearn.feature_extraction import FeatureHasher
+from sklearn.impute import SimpleImputer
+from sklearn.pipeline import Pipeline
+
+imputers = {
+{% for col, name, imputer in imputers %}
+    "{{ col }}": ("{{ name }}", {{ imputer }}),
+{% endfor %}
+}
+
+{{ var_categorical_hash_transformers }} = []
+
+for col in {{ m.render_string_list(hash_cols) }}:
+    hasher = FeatureHasher(n_features={{ num_hash_output_cols }}, input_type="string")
+    if col in imputers:
+        imputer_name, imputer = imputers[col]
+    else:
+        imputer_name, imputer = "{{ default_imputer_name }}", {{ default_imputer }}
+    hash_pipeline = Pipeline(steps=[
+        (imputer_name, imputer),
+        (f"{col}_hasher", hasher),
+    ])
+    {{ var_categorical_hash_transformers }}.append((f"{col}_pipeline", hash_pipeline, [col]))

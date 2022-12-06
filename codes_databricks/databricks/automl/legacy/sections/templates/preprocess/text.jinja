@@ -1,0 +1,23 @@
+{% import 'macros.jinja' as m with context %}
+%md ### Text features
+Convert each feature to a fixed-length vector using TF-IDF vectorization. The length of the output
+vector is equal to {{ num_output_cols }}. Each column corresponds to one of the top word n-grams
+where n is in the range [{{ min_ngram_size }}, {{ max_ngram_size }}].
+
+# COMMAND ----------
+import numpy as np
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.impute import SimpleImputer
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import FunctionTransformer
+
+{{ var_text_transformers }} = []
+
+for col in {{ text_cols }}:
+    vectorizer = Pipeline(steps=[
+        ("imputer", SimpleImputer(missing_values=None, strategy="constant", fill_value="")),
+        # Reshape to 1D since SimpleImputer changes the shape of the input to 2D
+        ("reshape", FunctionTransformer(np.reshape, kw_args={"newshape":-1})),
+        ("tfidf", TfidfVectorizer(decode_error="ignore", ngram_range = ({{ min_ngram_size }}, {{ max_ngram_size }}), max_features={{ num_output_cols }}))])
+
+    {{ var_text_transformers }}.append((f"text_{col}", vectorizer, [col]))

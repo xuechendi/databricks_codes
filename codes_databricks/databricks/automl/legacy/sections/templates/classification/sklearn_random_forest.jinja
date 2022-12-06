@@ -1,0 +1,11 @@
+{# sklearn_random_forest.jinja prepares the cell for training model using random forest #}
+{% extends 'classification/sklearn_base.jinja' %}
+{% set model_name = 'Random Forest' %}
+
+{% block model_definition %}
+RandomForestClassifier(
+{% for key in parameter_dict %}
+  {{key}}={{parameter_dict[key]}},
+{% endfor %}
+)
+{% endblock %}

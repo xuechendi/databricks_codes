@@ -1,0 +1,44 @@
+{% import 'macros.jinja' as m with context %}
+{% set var_train = m.with_prefix('train_df') %}
+{% set var_val = m.with_prefix('val_df') %}
+{% set var_test = m.with_prefix('test_df') %}
+
+%md ## Train - Validation - Test Split
+The input data is split by AutoML into 3 sets:
+- Train (60% of the dataset used to train the model)
+- Validation (20% of the dataset used to tune the hyperparameters of the model)
+- Test (20% of the dataset used to report the true performance of the model on an unseen dataset)
+
+`{{ split_col }}` contains the information of which set a given row belongs to.
+We use this column to split the dataset into the above 3 sets. 
+The column should not be used for training so it is dropped after split is done.
+
+{% if time_col %}
+Given that `{{ time_col }}` is provided as the `time_col`, the data is split based on time order,
+where the most recent data is split to the test data.
+{% endif %}
+
+# COMMAND ----------
+# AutoML completed train - validation - test split internally and used {{ split_col }} to specify the set
+{{ var_train }} = {{ var_input_df }}.loc[{{ var_input_df }}.{{ split_col }} == "train"]
+{{ var_val }} = {{ var_input_df }}.loc[{{ var_input_df }}.{{ split_col }} == "val"]
+{{ var_test }} = {{ var_input_df }}.loc[{{ var_input_df }}.{{ split_col }} == "test"]
+
+# Separate target column from features and drop {{ split_col }}
+{{ var_X_train }} = {{ var_train }}.drop([{{var_target_col}}, "{{ split_col }}"], axis=1)
+{{ var_y_train }} = {{ var_train }}[{{var_target_col}}]
+
+{{ var_X_val }} = {{ var_val }}.drop([{{var_target_col}}, "{{ split_col }}"], axis=1)
+{{ var_y_val }} = {{ var_val }}[{{var_target_col}}]
+
+{{ var_X_test }} = {{ var_test }}.drop([{{var_target_col}}, "{{ split_col }}"], axis=1)
+{{ var_y_test }} = {{ var_test }}[{{var_target_col}}]
+
+{% if sample_weight_col|default(false) %}
+# COMMAND ----------
+# AutoML balanced the data internally and use {{ sample_weight_col }} to calibrate the probability distribution
+{{ var_sample_weight }} = {{ var_X_train }}.loc[:, "{{ sample_weight_col }}"].to_numpy()
+{{ var_X_train }} = {{ var_X_train }}.drop(["{{ sample_weight_col }}"], axis=1)
+{{ var_X_val }} = {{ var_X_val }}.drop(["{{ sample_weight_col }}"], axis=1)
+{{ var_X_test }} = {{ var_X_test }}.drop(["{{ sample_weight_col }}"], axis=1)
+{% endif %}

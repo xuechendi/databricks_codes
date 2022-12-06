@@ -1,0 +1,151 @@
+{% import 'macros.jinja' as m with context %}
+%md # Data Exploration
+This notebook performs exploratory data analysis on the dataset.
+To expand on the analysis, attach this notebook to the **{{ cluster_name }}** cluster,
+edit [the options of pandas-profiling](https://pandas-profiling.ydata.ai/docs/master/rtd/pages/advanced_usage.html), and rerun it.
+- Explore completed trials in the [MLflow experiment]({{ experiment_url }})
+- Navigate to the parent notebook [here]({{ driver_notebook_url }}) (If you launched the AutoML experiment using the Experiments UI, this link isn't very useful.)
+
+Runtime Version: _{{ runtime_version }}_
+
+{% if sample_fraction %}
+# COMMAND ----------
+
+%md
+> **NOTE:** The dataset loaded below is a sample of the original dataset.
+{% if problem_type == "classification" %}
+Stratified sampling using pyspark's [sampleBy](https://spark.apache.org/docs/latest/api/python/reference/api/pyspark.sql.DataFrameStatFunctions.sampleBy.html)
+method is used to ensure that the distribution of the target column is retained.
+{% else %}
+Pyspark's [sample](https://spark.apache.org/docs/latest/api/python/reference/api/pyspark.sql.DataFrame.sample.html) method
+is used to sample this dataset.
+{% endif %}
+<br/>
+> Rows were sampled with a sampling fraction of **{{ sample_fraction }}**
+{% endif %}
+
+# COMMAND ----------
+
+{% if load_from_dbfs %}
+# Load the data into a pandas DataFrame
+import pandas as pd
+import databricks.automl_runtime
+
+{{ var_df }} = pd.read_parquet("{{ dbfs_path }}")
+{% else %}
+import os
+import uuid
+import shutil
+import pandas as pd
+import databricks.automl_runtime
+
+from mlflow.tracking import MlflowClient
+
+# Download input data from mlflow into a pandas DataFrame
+# Create temporary directory to download data
+temp_dir = os.path.join(os.environ["SPARK_LOCAL_DIRS"], "tmp", str(uuid.uuid4())[:8])
+os.makedirs(temp_dir)
+
+# Download the artifact and read it
+client = MlflowClient()
+training_data_path = client.download_artifacts("{{ data_run_id }}", "data", temp_dir)
+{{ var_df }} = pd.read_parquet(os.path.join(training_data_path, "training_data"))
+
+# Delete the temporary data
+shutil.rmtree(temp_dir)
+{% endif %}
+
+target_col = "{{ target_col }}"
+{% if date_cols %}
+
+# Convert Spark date columns to Pandas datetime
+date_columns = {{ date_cols }}
+{{ var_df }}[date_columns] = {{ var_df }}[date_columns].apply(pd.to_datetime, errors="coerce")
+{% endif %}
+{% if internal_cols|default(false) %}
+
+# Drop columns created by AutoML before pandas-profiling
+{{ var_df }} = {{ var_df }}.drop({{ internal_cols }}, axis=1)
+{% endif %}
+{% for key in strong_semantic_detections %}
+
+# Convert columns detected to be of semantic type {{ key }}
+{% if key == "numeric" %}
+numeric_columns = {{ m.render_string_list(strong_semantic_detections[key]) }}
+{{ var_df }}[numeric_columns] = {{ var_df }}[numeric_columns].apply(pd.to_numeric, errors="coerce")
+{% endif %}
+{% if key == "datetime" %}
+datetime_columns = {{ m.render_string_list(strong_semantic_detections[key]) }}
+{{ var_df }}[datetime_columns] = {{ var_df }}[datetime_columns].apply(pd.to_datetime, errors="coerce")
+{% endif %}
+{% if key == "categorical" %}
+categorical_columns = {{ m.render_string_list(strong_semantic_detections[key]) }}
+{{ var_df }}[categorical_columns] = {{ var_df }}[categorical_columns].applymap(str)
+{% endif %}
+{% endfor %}
+{% if "semantic_type" in alerts.keys() %}
+
+# COMMAND ----------
+
+%md ## Semantic Type Detection Alerts
+
+For details about the definition of the semantic types and how to override the detection, see
+[Databricks documentation on semantic type detection]({{ semantic_detection_doc_link }}).
+
+{% for alert_str in alerts["semantic_type"] %}
+- {{ alert_str }}
+{% endfor %}
+{% endif %}
+{% if "other" in alerts.keys() %}
+
+# COMMAND ----------
+
+%md ## Additional AutoML Alerts
+
+{% for alert_str in alerts["other"] %}
+- {{ alert_str }}
+{% endfor %}
+{% endif %}
+
+{% if truncate_rows > 0 %}
+# COMMAND ----------
+
+%md ## Truncate rows
+Only the first {{ truncate_rows }} rows will be considered for pandas-profiling to avoid out-of-memory issues.
+Comment out next cell and rerun the notebook to profile the full dataset.
+
+# COMMAND ----------
+
+{{ var_df }} = {{ var_df }}.iloc[:{{ truncate_rows }}, :]
+{% endif %}
+
+{% if truncate_cols > 0 %}
+# COMMAND ----------
+
+%md ## Truncate columns
+Only the first {{ truncate_cols }} columns will be considered for pandas-profiling, to avoid out-of-memory issues. Special columns, such as the target column, are always included. Modify the next cell to rerun pandas-profiling on a different set of columns.
+
+# COMMAND ----------
+
+{% if time_col %}
+special_cols = ["{{ target_col }}", "{{ time_col }}"]
+{% else %}
+special_cols = ["{{ target_col }}"]
+{% endif %}
+{{ var_df }} = pd.concat([{{ var_df }}[special_cols], {{ var_df }}.drop(columns=special_cols).iloc[:, :{{ truncate_cols }} - len(special_cols)]], axis=1)
+{% endif %}
+
+# COMMAND ----------
+
+%md ## Profiling Results
+
+# COMMAND ----------
+%large-display-output
+
+from pandas_profiling import ProfileReport
+{# Disable type inference and use the pandas dtype, since we already detect/convert columns
+   See https://github.com/pandas-profiling/pandas-profiling/issues/676 #}
+{{var_profile}} = ProfileReport({{ var_df }},{{extra_conf}} title="Profiling Report", progress_bar=False, infer_dtypes=False)
+profile_html = {{var_profile}}.to_html()
+
+displayHTML(profile_html)

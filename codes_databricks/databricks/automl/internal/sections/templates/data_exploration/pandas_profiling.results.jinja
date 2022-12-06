@@ -1,0 +1,28 @@
+{# When transfer the profile result to json. It has some output for the progresses. So we need to put it in a different cell. #}
+
+{# Remove sections whose entries scale with the number of unique values per column, to reduce serialization cost #}
+for column in {{var_profile}}._description_set["variables"]:
+  {{var_profile}}._description_set["variables"][column].pop("value_counts_without_nan", None)
+  {{var_profile}}._description_set["variables"][column].pop("length", None)
+  {{var_profile}}._description_set["variables"][column].pop("word_counts", None)
+
+{# Add formatted warning information to the analysis_result #}
+def process_warning_alert(alert):
+    warning_dict = {}
+    warning_dict["warning_type"] = alert.alert_type.name.replace("_", " ")
+    warning_dict["column_name"] = alert.column_name
+    if warning_dict["warning_type"] == "HIGH CORRELATION":
+        warning_dict["fields"] = alert.values
+    else:
+        warning_dict["fields"] = { field: alert.values[field] for field in list(alert.fields) }
+    return warning_dict
+
+if "alerts" in {{var_profile}}._description_set.keys():
+    warning_messages = {{var_profile}}._description_set["alerts"]
+    {{var_profile}}._description_set["alerts"] = [process_warning_alert(alert) for alert in warning_messages]
+
+analysis_result = {{var_profile}}.to_json()
+
+# COMMAND ----------
+
+print( analysis_result )

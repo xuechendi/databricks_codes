@@ -1,0 +1,31 @@
+{% import 'macros.jinja' as m with context %}
+%md ### Boolean columns
+For each column, impute missing values and then convert into ones and zeros.
+
+# COMMAND ----------
+from sklearn.compose import ColumnTransformer
+from sklearn.impute import SimpleImputer
+from sklearn.pipeline import Pipeline
+from sklearn.preprocessing import FunctionTransformer, OneHotEncoder
+
+{#
+There are three types of data that may be input to this pipeline.
+1. Columns with booleans and no missing values are bool dtype.
+2. Columns with booleans and missing values (None) are object dtype, because object dtype is used for mixed-type data.
+3. Columns with strings (and maybe missing values) are object dtype. These columns are identified by pandas-profiling as boolean data, eg. "yes"/"no" columns.
+
+For simplicity, and because SimpleImputer doesn't support columns with bool dtype, use a FunctionTransformer to cast the column as object.
+#}
+
+bool_imputers = []
+{% for cols, name, imputer in imputers %}
+bool_imputers.append(("{{ name }}", {{ imputer }}, {{ m.render_string_list(cols) }}))
+{% endfor %}
+
+bool_pipeline = Pipeline(steps=[
+    ("cast_type", FunctionTransformer(lambda df: df.astype(object))),
+    ("imputers", ColumnTransformer(bool_imputers, remainder="passthrough")),
+    ("onehot", OneHotEncoder(handle_unknown="ignore")),
+])
+
+{{ var_bool_transformers }} = [("boolean", bool_pipeline, {{ m.render_string_list(boolean_cols) }})]

@@ -1,0 +1,97 @@
+{% extends 'forecast/base_arima.jinja' %}
+{% import 'macros.jinja' as m with context %}
+
+{% block aggregation_md %}
+%md ### Aggregate data by `id_col` and `time_col`
+Group the data by `id_col` and `time_col`, and take average if there are multiple `target_col` values in the same group.
+{% endblock %}
+
+{% block gen_group_cols %}
+group_cols = [{{ var_time_col }}] + {{ var_id_cols }}
+{% endblock %}
+
+{% block gen_ts_id_col %}
+{{m.gen_ts_id_col("df_aggregated", identity_col)}}
+{% endblock %}
+
+{% block filter_invalid_identities %}
+{% if invalid_identities %}
+# Filter out the time series with too few data. Models won't be trained for the timeseries
+# with these identities. Please provide more data for these timeseries.
+df_aggregated = df_aggregated.loc[~df_aggregated["ts_id"].isin({{ invalid_identities }})]
+
+{% endif %}
+{% endblock %}
+
+{% block define_result_columns %}
+from pyspark.sql.types import *
+
+result_columns = ["ts_id", "pickled_model", "start_time", "end_time", "mse",
+                  "rmse", "mae", "mape", "mdape", "smape", "coverage"]
+result_schema = StructType([
+  StructField("ts_id", StringType()),
+  StructField("pickled_model", BinaryType()),
+  StructField("start_time", TimestampType()),
+  StructField("end_time", TimestampType()),
+  StructField("mse", FloatType()),
+  StructField("rmse", FloatType()),
+  StructField("mae", FloatType()),
+  StructField("mape", FloatType()),
+  StructField("mdape", FloatType()),
+  StructField("smape", FloatType()),
+  StructField("coverage", FloatType())
+  ])
+{% endblock %}
+
+{% block create_results_pd %}
+results_pd = arima_estim.fit(history_pd)
+  results_pd["ts_id"] = str(history_pd["ts_id"].iloc[0])
+  results_pd["start_time"] = pd.Timestamp(history_pd["ds"].min())
+  results_pd["end_time"] = pd.Timestamp(history_pd["ds"].max())
+{% endblock %}
+
+{% block define_fail_safe_wrapper %}
+def train_with_fail_safe(df):
+  try:
+    return arima_training(df)
+  except Exception as e:
+    print(f"Encountered an exception while training timeseries: {repr(e)}")
+    return pd.DataFrame(columns=result_columns)
+{% endblock %}
+
+{% block automl_runtime_imports %}
+from databricks.automl_runtime.forecast.pmdarima.model import MultiSeriesArimaModel, mlflow_arima_log_model
+{% endblock %}
+
+{% block call_training %}
+arima_results = (df_aggregated.to_spark().repartition(sc.defaultParallelism, {{ var_id_cols }})
+    .groupby({{ var_id_cols }}).applyInPandas(train_with_fail_safe, result_schema)).cache().to_pandas_on_spark()
+{% endblock %}
+
+{% block validate_all_models_trained %}
+{{ m.validate_all_models_trained("arima_results") }}
+{%- endblock %}
+
+{% block create_arima_mlflow_model %}
+pickled_model = arima_results[["ts_id", "pickled_model"]].to_pandas().set_index("ts_id").to_dict()["pickled_model"]
+  start_time = arima_results[["ts_id", "start_time"]].to_pandas().set_index("ts_id").to_dict()["start_time"]
+  end_time = arima_results[["ts_id", "end_time"]].to_pandas().set_index("ts_id").to_dict()["end_time"]
+  arima_model = MultiSeriesArimaModel(pickled_model, {{ var_horizon }}, {{ var_frequency_unit }}, start_time, end_time, {{ var_time_col }}, {{ var_id_cols }})
+{% endblock %}
+
+{% block add_forecasts_plot %}
+{{ super() }}
+# Choose a random id from `ts_id` for plot
+id_ = set(forecast_pd["ts_id"]).pop()
+forecast_pd_plot = forecast_pd[forecast_pd["ts_id"] == id_]
+history_pd_plot = df_aggregated[df_aggregated["ts_id"] == id_].to_pandas()
+# When visualizing, we ignore the first d (differencing order) points of the prediction results
+# because it is impossible for ARIMA to predict the first d values
+d = loaded_model._model_impl.python_model.model(id_).order[1]
+fig = plot(history_pd_plot[d:], forecast_pd_plot[d:])
+fig
+{% endblock %}
+
+{% block predict_cols %}
+predict_cols = ["ds", "ts_id", "yhat"]
+{% endblock %}

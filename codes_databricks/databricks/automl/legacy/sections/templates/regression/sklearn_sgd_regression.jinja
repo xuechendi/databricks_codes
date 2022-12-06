@@ -1,0 +1,10 @@
+{% extends 'regression/sklearn_base.jinja' %}
+{% set model_name = 'SGD Regression' %}
+
+{% block model_definition %}
+SGDRegressor(
+{% for key in parameter_dict %}
+  {{key}}={{parameter_dict[key]}},
+{% endfor %}
+)
+{% endblock %}

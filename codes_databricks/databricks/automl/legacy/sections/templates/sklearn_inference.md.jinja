@@ -1,0 +1,36 @@
+{# sklearn_load_predict.jinja example snippet to add the sklearn model to the MLflow model registry. #}
+
+%md ## Inference
+[The MLflow Model Registry](https://docs.databricks.com/applications/mlflow/model-registry.html) is a collaborative hub where teams can share ML models, work together from experimentation to online testing and production, integrate with approval and governance workflows, and monitor ML deployments and their performance. The snippets below show how to add the model trained in this notebook to the model registry and to retrieve it later for inference.
+
+> **NOTE:** The `model_uri` for the model already trained in this notebook can be found in the cell below
+
+### Register to Model Registry
+```
+model_name = "Example"
+
+model_uri = f"runs:/{% raw %}{ {% endraw %}{{var_run}}.info.run_id{% raw %} }{% endraw %}/model"
+registered_model_version = mlflow.register_model(model_uri, model_name)
+```
+
+### Load from Model Registry
+```
+model_name = "Example"
+model_version = registered_model_version.version
+
+model = mlflow.pyfunc.load_model(model_uri=f"models:/{model_name}/{model_version}")
+model.predict(input_X)
+```
+
+### Load model without registering
+```
+model_uri = f"runs:/{% raw %}{ {% endraw %}{{var_run}}.info.run_id{% raw %} }{% endraw %}/model"
+
+model = mlflow.pyfunc.load_model(model_uri)
+model.predict(input_X)
+```
+
+# COMMAND ----------
+
+# model_uri for the generated model
+print(f"runs:/{% raw %}{ {% endraw %}{{var_run}}.info.run_id{% raw %} }{% endraw %}/model")

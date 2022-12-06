@@ -1,0 +1,9 @@
+{% extends 'sklearn_help.jinja' %}
+
+{% block imports %}
+from sklearn.tree import DecisionTreeClassifier
+{% endblock %}
+
+{% block model_help %}
+help(DecisionTreeClassifier)
+{% endblock %}

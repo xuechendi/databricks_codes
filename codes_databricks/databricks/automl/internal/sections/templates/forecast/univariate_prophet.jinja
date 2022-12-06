@@ -1,0 +1,57 @@
+{% extends 'forecast/base_prophet.jinja' %}
+
+{% block aggregation_md %}
+%md ### Aggregate data by `time_col`
+Group the data by `time_col`, and take avearge if there are multiple `target_col` values in the same group.
+{% endblock %}
+
+{% block gen_group_cols %}
+group_cols = [{{ var_time_col }}]
+{% endblock %}
+
+{% block define_result_columns %}
+result_columns = ["model_json", "mse", "rmse", "mae", "mape", "mdape", "smape", "coverage"]
+{% endblock %}
+
+{% block set_run_in_parallel %}
+run_parallel = True
+{% endblock %}
+
+{% block create_results_pd %}
+spark.conf.set("spark.databricks.mlflow.trackHyperopt.enabled", "false")
+
+  results_pd = hyperopt_estim.fit(history_pd)
+
+  spark.conf.set("spark.databricks.mlflow.trackHyperopt.enabled", "true")
+{% endblock %}
+
+{% block automl_runtime_imports %}
+from databricks.automl_runtime.forecast.prophet.model import mlflow_prophet_log_model, ProphetModel
+{% endblock %}
+
+{% block call_training %}
+forecast_results = prophet_training(df_aggregated.to_pandas())
+{% endblock %}
+
+{% block save_prophet_model %}
+# Create mlflow prophet model
+  model_json = forecast_results["model_json"].to_list()[0]
+  prophet_model = ProphetModel(model_json, {{ var_horizon }}, {{ var_frequency_unit }}, {{ var_time_col }})
+  mlflow_prophet_log_model(prophet_model)
+{% endblock %}
+
+{% block forecast_predict %}
+# Predict future with the default horizon
+forecast_pd = loaded_model._model_impl.python_model.predict_timeseries()
+{% endblock %}
+
+{% block get_model_from_wrapper_prophet %}
+# COMMAND ----------
+# Get prophet model
+model = loaded_model._model_impl.python_model.model()
+predict_pd = forecast_pd
+{% endblock %}
+
+{% block predict_cols %}
+predict_cols = ["ds", "yhat"]
+{% endblock %}

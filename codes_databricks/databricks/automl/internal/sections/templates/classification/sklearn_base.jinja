@@ -1,0 +1,203 @@
+{# sklearn_base.jinja is the base template that can be inherited from to generate model specific templates #}
+{% import 'macros.jinja' as m with context %}
+
+{# Redefine the block into a macro so that we can use it in more than one locations #}
+{% macro model_definition() %}{% block model_definition %}{% endblock %}{% endmacro %}
+
+{# define internal variables with prefix for ease of use #}
+{% set var_classifier = m.with_prefix('classifier') %}
+{% set var_training_metrics = m.with_prefix('training_metrics') %}
+{% set var_val_metrics = m.with_prefix('val_metrics') %}
+{% set var_test_metrics = m.with_prefix('test_metrics') %}
+
+%md ### Define the objective function
+The objective function used to find optimal hyperparameters. By default, this notebook only runs
+this function once (`max_evals=1` in the `hyperopt.fmin` invocation) with fixed hyperparameters, but
+hyperparameters can be tuned by modifying `space`, defined below. `hyperopt.fmin` will then use this
+function's return value to search the space to minimize the loss.
+
+# COMMAND ----------
+
+import mlflow
+{% block imports %}{% endblock %}
+import sklearn
+from sklearn import set_config
+from sklearn.pipeline import Pipeline
+{% if need_target_encoder|default(false) %}
+from sklearn.preprocessing import LabelEncoder
+from databricks.automl_runtime.sklearn import TransformedTargetClassifier
+{% endif %}
+{% if has_feature_store_joins %}
+from databricks.feature_store import FeatureStoreClient
+{% endif %}
+
+from hyperopt import hp, tpe, fmin, STATUS_OK, Trials
+{% if use_eval_set|default(false) %}
+{% set var_pipeline_val = var_pipeline + "_val" %}
+{% set var_X_val_processed = var_X_val + "_processed" %}
+
+# Create a separate pipeline to transform the validation dataset. This is used for early stopping.
+mlflow.sklearn.autolog(disable=True)
+{{ var_pipeline_val }} = Pipeline([
+    ("column_selector", {{ var_column_selector }}),
+{% if var_preprocessor != None %}
+    ("{{ var_preprocessor }}", {{ var_preprocessor }}),
+{% endif %}
+])
+{{ var_pipeline_val }}.fit({{ var_X_train }}, {{ var_y_train }})
+{{ var_X_val_processed }} = {{ var_pipeline_val }}.transform({{ var_X_val }})
+{% if need_target_encoder|default(false) %}
+{% set var_y_val_processed = var_y_val + "_processed" %}
+{% set var_label_encoder_val = "label_encoder_val" %}
+{{ var_label_encoder_val }} = LabelEncoder()
+{{ var_label_encoder_val }}.fit({{ var_y_train }})
+{{ var_y_val_processed }} = {{ var_label_encoder_val }}.transform({{ var_y_val }})
+{% endif %}{# need_target_encoder #}
+{% endif %}{# use_eval_set #}
+
+{% set fit_params = [] %}
+{% set _ =  fit_params.append(var_X_train) %}
+{% set _ =  fit_params.append(var_y_train) %}
+{% if use_eval_set|default(false) %}
+{%   if model_name == 'lightgbm' %}
+{%     set _ =  fit_params.append('classifier__callbacks=[lightgbm.early_stopping(5), lightgbm.log_evaluation(0)]') %}
+{%   else %}
+{%     set _ =  fit_params.append('classifier__early_stopping_rounds=5') %}
+{%     set _ =  fit_params.append('classifier__verbose=False') %}
+{%   endif %}
+{%   if need_target_encoder|default(false) %}
+{%     set _ =  fit_params.append('classifier__eval_set='+'[('+var_X_val_processed+','+var_y_val_processed+')]') %}
+{%   else %}
+{%     set _ =  fit_params.append('classifier__eval_set='+'[('+var_X_val_processed+','+var_y_val+')]') %}
+{%   endif %}
+{% endif %}{# use_eval_set #}
+def objective(params):
+  with mlflow.start_run(experiment_id="{{ experiment_id }}", run_name="{{ model_name | camelcase }}") as {{ var_run }}:
+{% if sample_weight_col|default(false) %}
+{% set _ = fit_params.append('classifier__sample_weight='+var_sample_weight) %}
+{# Unlike pos_label_flag, sample_weight_flag is set here because it contains the variable var_sample_weight which is set in the template #}
+{% set sample_weight_flag = ', sample_weight='+var_sample_weight %}
+{% endif %}
+    {{ var_classifier }} = {{ model_definition() }}
+    {{ var_model }} = Pipeline([
+        ("column_selector", {{ var_column_selector }}),
+{% if var_preprocessor != None %}
+        ("{{ var_preprocessor }}", {{ var_preprocessor }}),
+{% endif %}
+        ("classifier", {{ var_classifier }}),
+    ])
+
+    # Enable automatic logging of input samples, metrics, parameters, and models
+    mlflow.sklearn.autolog(
+        log_input_examples=True,
+{% if has_feature_store_joins %}
+        log_models=False,
+{% endif %}
+        silent=True)
+
+    {{ var_model }}.fit({{ fit_params|join(", ") }})
+
+{% if has_feature_store_joins %}
+    # Log the model
+    fs = FeatureStoreClient()
+    fs.log_model(
+        model={{ var_model }},
+        artifact_path="model",
+        flavor=mlflow.sklearn,
+        feature_spec_path={{ var_feature_spec_path }},
+    )
+{% endif %}
+    {#
+    - Most logged metrics use functions from sklearn.metrics, and are logged in mlflow repo's mlflow/sklearn/utils.py _get_classifier_metrics
+    - training_score is computed by directly calling the model's score function in mlflow repo's mlflow/sklearn/__init__.py _log_posttraining_metadata
+    However, based on sklearn's source code, it just uses sklearn.metrics.accuracy_score: https://github.com/scikit-learn/scikit-learn/blob/b3ea3ed6a/sklearn/base.py#L475
+    - We need to override the training metrics logged by autologging if we use pos_label for other metrics or use sample_weight
+    #}
+
+    # Log metrics for the training set
+    {{ var_training_metrics }} = mlflow.sklearn.eval_and_log_metrics({{ var_model }}, {{ var_X_train }}, {{ var_y_train }}, prefix="training_"{{ pos_label_flag|default("") }}{{ sample_weight_flag|default("") }})
+
+    # Log metrics for the validation set
+    {{ var_val_metrics }} = mlflow.sklearn.eval_and_log_metrics({{ var_model }}, {{ var_X_val }}, {{ var_y_val }}, prefix="val_"{{ pos_label_flag|default("") }})
+
+    # Log metrics for the test set
+    {{ var_test_metrics }} = mlflow.sklearn.eval_and_log_metrics({{ var_model }}, {{ var_X_test }}, {{ var_y_test }}, prefix="test_"{{ pos_label_flag|default("") }})
+
+    loss = {{ var_val_metrics }}["{{ metric }}"]
+
+    # Truncate metric key names so they can be displayed together
+    {{ var_val_metrics }} = {k.replace("val_", ""): v for k, v in {{ var_val_metrics }}.items()}
+    {{ var_test_metrics }} = {k.replace("test_", ""): v for k, v in {{ var_test_metrics }}.items()}
+
+    return {
+      "loss": loss,
+      "status": STATUS_OK,
+      "val_metrics": {{ var_val_metrics }},
+      "test_metrics": {{ var_test_metrics }},
+      "model": {{ var_model }},
+      "run": {{ var_run }},
+    }
+
+# COMMAND ----------
+
+%md ### Configure the hyperparameter search space
+Configure the search space of parameters. Parameters below are all constant expressions but can be
+modified to widen the search space. For example, when training a decision tree classifier, to allow
+the maximum tree depth to be either 2 or 3, set the key of 'max_depth' to
+`hp.choice('max_depth', [2, 3])`. Be sure to also increase `max_evals` in the `fmin` call below.
+
+See https://docs.databricks.com/applications/machine-learning/automl-hyperparam-tuning/index.html
+for more information on hyperparameter tuning as well as
+http://hyperopt.github.io/hyperopt/getting-started/search_spaces/ for documentation on supported
+search expressions.
+
+For documentation on parameters used by the model in use, please see:
+{{ model_documentation_url }}
+
+NOTE: The above URL points to a stable version of the documentation corresponding to the last
+released version of the package. The documentation may differ slightly for the package version
+used by this notebook.
+
+# COMMAND ----------
+
+space = {
+{% for key in parameter_dict %}
+  "{{key}}": {{parameter_dict[key]}},
+{% endfor %}
+}
+
+# COMMAND ----------
+
+%md ### Run trials
+When widening the search space and training multiple models, switch to `SparkTrials` to parallelize
+training on Spark:
+```
+from hyperopt import SparkTrials
+trials = SparkTrials()
+```
+
+NOTE: While `Trials` starts an MLFlow run for each set of hyperparameters, `SparkTrials` only starts
+one top-level run; it will start a subrun for each set of hyperparameters.
+
+See http://hyperopt.github.io/hyperopt/scaleout/spark/ for more info.
+
+# COMMAND ----------
+
+trials = Trials()
+fmin(objective,
+     space=space,
+     algo=tpe.suggest,
+     max_evals=1,  # Increase this when widening the hyperparameter search space.
+     trials=trials)
+
+best_result = trials.best_trial["result"]
+{{ var_model }} = best_result["model"]
+{{ var_run }} = best_result["run"]
+
+display(
+  pd.DataFrame(
+    [best_result["val_metrics"], best_result["test_metrics"]],
+    index=["validation", "test"]))
+
+set_config(display="diagram")
+{{ var_model }}

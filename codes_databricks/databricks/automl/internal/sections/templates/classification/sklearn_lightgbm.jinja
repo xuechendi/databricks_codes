@@ -1,0 +1,10 @@
+{# lightgbm_classifier.jinja prepares the cell for training model using LightGBM #}
+{% extends 'classification/sklearn_base.jinja' %}
+{% set model_name = 'lightgbm' %}
+{% set model_documentation_url = 'https://lightgbm.readthedocs.io/en/stable/pythonapi/lightgbm.LGBMClassifier.html' %}
+{% set use_eval_set = true %}
+
+
+{% block model_definition %}
+LGBMClassifier(**params)
+{% endblock %}

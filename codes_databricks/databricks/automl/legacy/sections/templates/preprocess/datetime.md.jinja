@@ -1,0 +1,14 @@
+### Datetime Preprocessor
+For each datetime column, extract relevant information from the date:
+- Unix timestamp
+- whether the date is a weekend
+- whether the date is a holiday
+
+Additionally, extract extra information from columns with timestamps:
+- hour of the day (one-hot encoded)
+
+For cyclic features, plot the values along a unit circle to encode temporal proximity:
+- hour of the day
+- hours since the beginning of the week
+- hours since the beginning of the month
+- hours since the beginning of the year

@@ -1,0 +1,9 @@
+{% extends 'sklearn_help.jinja' %}
+
+{% block imports %}
+from sklearn.ensemble import RandomForestClassifier
+{% endblock %}
+
+{% block model_help %}
+help(RandomForestClassifier)
+{% endblock %}

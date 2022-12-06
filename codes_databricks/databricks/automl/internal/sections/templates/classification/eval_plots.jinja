@@ -1,0 +1,65 @@
+{% import 'macros.jinja' as m with context %}
+
+{% set var_temp_dir = m.with_prefix('temp_dir') %}
+{% set var_path = m.with_prefix('path') %}
+{% set var_confusion_matrix_path = m.with_prefix('confusion_matrix_path') %}
+{% set var_roc_curve_path = m.with_prefix('roc_curve_path') %}
+{% set var_pr_curve_path = m.with_prefix('pr_curve_path') %}
+
+%md ## Confusion matrix{% if not multiclass %}, ROC and Precision-Recall curves{% endif %} for validation data
+
+We show the confusion matrix{% if not multiclass %}, ROC and Precision-Recall curves{% endif %} of the model on the validation data.
+
+For the plots evaluated on the training and the test data, check the artifacts on the MLflow run page.
+
+# COMMAND ----------
+
+# Paste the entire output (%md ...) to an empty cell, and click the link to see the MLflow run page
+print(f"%md [Link to model run page](#mlflow/experiments/{{ experiment_id }}/runs/{ {{ var_run }}.info.run_id }/artifactPath/model)")
+
+# COMMAND ----------
+
+import uuid
+from IPython.display import Image
+
+# Create temp directory to download MLflow model artifact
+{{ var_temp_dir }} = os.path.join(os.environ["SPARK_LOCAL_DIRS"], "tmp", str(uuid.uuid4())[:8])
+os.makedirs({{ var_temp_dir }}, exist_ok=True)
+
+# Download the artifact
+{{ var_path }} = mlflow.artifacts.download_artifacts(run_id={{ var_run }}.info.run_id, dst_path={{ var_temp_dir }})
+
+{% if not multiclass %}
+# COMMAND ----------
+
+%md ### Confusion matrix for validation dataset
+
+{% endif %}
+# COMMAND ----------
+%large-display-output
+
+{{ var_confusion_matrix_path }} = os.path.join({{ var_path }}, "val_confusion_matrix.png")
+display(Image(filename={{ var_confusion_matrix_path }}))
+
+{% if not multiclass %}
+# COMMAND ----------
+
+%md ### ROC curve for validation dataset
+
+# COMMAND ----------
+%large-display-output
+
+{{ var_roc_curve_path }} = os.path.join({{ var_path }}, "val_roc_curve.png")
+display(Image(filename={{ var_roc_curve_path }}))
+
+# COMMAND ----------
+
+%md ### Precision-Recall curve for validation dataset
+
+# COMMAND ----------
+%large-display-output
+
+{{ var_pr_curve_path }} = os.path.join({{ var_path }}, "val_precision_recall_curve.png")
+display(Image(filename={{ var_pr_curve_path }}))
+
+{% endif %}

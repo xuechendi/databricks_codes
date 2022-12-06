@@ -1,0 +1,10 @@
+{% extends 'regression/sklearn_base.jinja' %}
+{% set model_name = 'Random Forest Regressor' %}
+
+{% block model_definition %}
+RandomForestRegressor(
+{% for key in parameter_dict %}
+  {{key}}={{parameter_dict[key]}},
+{% endfor %}
+)
+{% endblock %}

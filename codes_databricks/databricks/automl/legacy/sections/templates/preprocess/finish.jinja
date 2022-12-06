@@ -1,0 +1,5 @@
+from sklearn.compose import ColumnTransformer
+
+transformers = {{ transformer_lists_used|join(" + ") }}
+
+{{ var_preprocessor }} = ColumnTransformer(transformers, remainder="passthrough", sparse_threshold={{ sparse_threshold }})

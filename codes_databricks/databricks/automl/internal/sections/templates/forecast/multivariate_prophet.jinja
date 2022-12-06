@@ -1,0 +1,118 @@
+{% extends 'forecast/base_prophet.jinja' %}
+{% import 'macros.jinja' as m with context %}
+
+{% block aggregation_md %}
+%md ### Aggregate data by `id_col` and `time_col`
+Group the data by `id_col` and `time_col`, and take average if there are multiple `target_col` values in the same group.
+{% endblock %}
+
+{% block gen_group_cols %}
+group_cols = [{{ var_time_col }}] + {{ var_id_cols }}
+{% endblock %}
+
+{% block gen_ts_id_col %}
+{{m.gen_ts_id_col("df_aggregated", identity_col)}}
+{% endblock %}
+
+{% block filter_invalid_identities %}
+{% if invalid_identities %}
+# Filter out the time series with too few data. Models won't be trained for the timeseries
+# with these identities. Please provide more data for these timeseries.
+df_aggregated = df_aggregated.loc[~df_aggregated["ts_id"].isin({{ invalid_identities }})]
+
+{% endif %}
+{% endblock %}
+
+{% block define_result_columns %}
+from pyspark.sql.types import *
+
+result_columns = ["ts_id", "model_json", "prophet_params", "start_time", "end_time", "mse",
+                  "rmse", "mae", "mape", "mdape", "smape", "coverage"]
+result_schema = StructType([
+  StructField("ts_id", StringType()),
+  StructField("model_json", StringType()),
+  StructField("prophet_params", StringType()),
+  StructField("start_time", TimestampType()),
+  StructField("end_time", TimestampType()),
+  StructField("mse", FloatType()),
+  StructField("rmse", FloatType()),
+  StructField("mae", FloatType()),
+  StructField("mape", FloatType()),
+  StructField("mdape", FloatType()),
+  StructField("smape", FloatType()),
+  StructField("coverage", FloatType())
+  ])
+{% endblock %}
+
+{% block define_fail_safe_wrapper %}
+def train_with_fail_safe(df):
+  try:
+    return prophet_training(df)
+  except Exception as e:
+    print(f"Encountered an exception while training timeseries: {repr(e)}")
+    return pd.DataFrame(columns=result_columns)
+{% endblock %}
+
+{% block set_run_in_parallel %}
+run_parallel = False
+{% endblock %}
+
+{% block create_results_pd %}
+results_pd = hyperopt_estim.fit(history_pd)
+  results_pd["ts_id"] = str(history_pd["ts_id"].iloc[0])
+  results_pd["start_time"] = pd.Timestamp(history_pd["ds"].min())
+  results_pd["end_time"] = pd.Timestamp(history_pd["ds"].max())
+{% endblock %}
+
+{% block automl_runtime_imports %}
+from databricks.automl_runtime.forecast.prophet.model import mlflow_prophet_log_model, MultiSeriesProphetModel
+{% endblock %}
+
+{% block call_training %}
+forecast_results = (df_aggregated.to_spark().repartition(sc.defaultParallelism, {{ var_id_cols }})
+    .groupby({{ var_id_cols }}).applyInPandas(train_with_fail_safe, result_schema)).cache().to_pandas_on_spark()
+{% endblock %}
+
+{% block validate_all_models_trained %}
+{{ m.validate_all_models_trained("forecast_results") }}
+{%- endblock %}
+
+{% block save_prophet_model %}
+# Create mlflow prophet model
+  model_json = forecast_results[["ts_id", "model_json"]].to_pandas().set_index("ts_id").to_dict()["model_json"]
+  start_time = forecast_results[["ts_id", "start_time"]].to_pandas().set_index("ts_id").to_dict()["start_time"]
+  end_time = forecast_results[["ts_id", "end_time"]].to_pandas().set_index("ts_id").to_dict()["end_time"]
+  end_history_time = max(end_time.values())
+  prophet_model = MultiSeriesProphetModel(model_json, start_time, end_history_time, {{ var_horizon }}, {{ var_frequency_unit }}, {{ var_time_col }}, {{ var_id_cols }})
+
+  # Generate sample input dataframe
+  sample_input = {{ var_input_df }}.head(1).to_pandas()
+  sample_input[time_col] = pd.to_datetime(sample_input[time_col])
+  sample_input.drop(columns=[target_col], inplace=True)
+
+  mlflow_prophet_log_model(prophet_model, sample_input=sample_input)
+{% endblock %}
+
+{% block forecast_predict %}
+model = loaded_model._model_impl.python_model
+col_types = [StructField(f"{n}", FloatType()) for n in model.get_reserved_cols()]
+col_types.append(StructField("ds",TimestampType()))
+col_types.append(StructField("ts_id",StringType()))
+result_schema = StructType(col_types)
+
+ids = ps.DataFrame(model._model_json.keys(), columns=["ts_id"])
+forecast_pd = ids.to_spark().groupby("ts_id").applyInPandas(lambda df: model.model_predict(df), result_schema).cache().to_pandas_on_spark().set_index("ts_id")
+{% endblock %}
+
+{% block get_model_from_wrapper_prophet %}
+# COMMAND ----------
+# Choose a random id from `ts_id` for plot
+id = set(forecast_pd.index.to_list()).pop()
+# Get the prophet model for this id
+model = loaded_model._model_impl.python_model.model(id)
+predict_pd = forecast_pd.loc[id].to_pandas()
+{% endblock %}
+
+{% block predict_cols %}
+predict_cols = ["ds", "ts_id", "yhat"]
+{% endblock %}

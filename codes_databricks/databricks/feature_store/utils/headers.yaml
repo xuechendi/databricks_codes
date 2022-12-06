@@ -1,0 +1,10 @@
+default_headers:
+  - feature-store-method-name
+  - cluster_id
+  - notebook_id
+  - job_id
+  - job_run_id
+  - job_type
+
+publish_table:
+  - publish_auth_type

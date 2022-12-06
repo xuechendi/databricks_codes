@@ -1,0 +1,45 @@
+{% extends 'forecast/base_arima.jinja' %}
+
+{% block aggregation_md %}
+%md ### Aggregate data by `time_col`
+Group the data by `time_col`, and take average if there are multiple `target_col` values in the same group.
+{% endblock %}
+
+{% block gen_group_cols %}
+group_cols = [{{ var_time_col }}]
+{% endblock %}
+
+{% block define_result_columns %}
+result_columns = ["pickled_model", "mse", "rmse", "mae", "mape", "mdape", "smape", "coverage"]
+{% endblock %}
+
+{% block create_results_pd %}
+results_pd = arima_estim.fit(history_pd)
+{% endblock %}
+
+{% block automl_runtime_imports %}
+from databricks.automl_runtime.forecast.pmdarima.model import ArimaModel, mlflow_arima_log_model
+{% endblock %}
+
+{% block call_training %}
+arima_results = arima_training(df_aggregated.to_pandas())
+{% endblock %}
+
+{% block create_arima_mlflow_model %}
+pickled_model = arima_results["pickled_model"].to_list()[0]
+  arima_model = ArimaModel(pickled_model, {{ var_horizon }}, {{ var_frequency_unit }}, df_aggregated["ds"].min(), df_aggregated["ds"].max(), {{ var_time_col }})
+{% endblock %}
+
+{% block add_forecasts_plot %}
+{{ super() }}
+history_pd = df_aggregated.to_pandas()
+# When visualizing, we ignore the first d (differencing order) points of the prediction results
+# because it is impossible for ARIMA to predict the first d values
+d = loaded_model._model_impl.python_model.model().order[1]
+fig = plot(history_pd[d:], forecast_pd[d:])
+fig
+{% endblock %}
+
+{% block predict_cols %}
+predict_cols = ["ds", "yhat"]
+{% endblock %}

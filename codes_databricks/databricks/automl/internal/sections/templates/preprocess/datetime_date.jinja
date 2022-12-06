@@ -1,0 +1,23 @@
+{% import 'macros.jinja' as m with context %}
+from pandas import Timestamp
+from sklearn.pipeline import Pipeline
+
+from databricks.automl_runtime.sklearn import DatetimeImputer
+from databricks.automl_runtime.sklearn import DateTransformer
+from sklearn.preprocessing import StandardScaler
+
+imputers = {
+{% for col, imputer in date_columns_and_imputers.items() %}
+  "{{ col }}": {{ imputer.get_sklearn_imputer() }},
+{% endfor %}
+}
+
+{{ var_date_transformers }} = []
+
+for col in {{ m.render_string_list(date_columns_and_imputers.keys()) }}:
+  date_preprocessor = Pipeline([
+    (f"impute_{col}", imputers[col]),
+    (f"transform_{col}", DateTransformer()),
+    (f"standardize_{col}", StandardScaler()),
+  ])
+  {{ var_date_transformers }}.append((f"date_{col}", date_preprocessor, [col]))
